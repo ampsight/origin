@@ -35,6 +35,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
+	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
@@ -231,6 +232,15 @@ const (
 	// but we are using a lower limit on purpose
 	filterNodeLimit = 150
 )
+
+type CustomEndpoint struct {
+	Endpoint      string `json:"url"`
+	SigningRegion string `json:"signingRegion"`
+}
+
+type CustomEndpoints struct {
+	Customs map[string]CustomEndpoint `json:"customs"`
+}
 
 // awsTagNameMasterRoles is a set of well-known AWS tag names that indicate the instance is a master
 // The major consequence is that it is then not considered for AWS zone discovery for dynamic volume creation.
@@ -643,10 +653,45 @@ func (p *awsSDKProvider) getCrossRequestRetryDelay(regionName string) *CrossRequ
 	return delayer
 }
 
+const CustomEndpointFile = "/etc/awscustoms.json"
+
+func loadCustomResolver() func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+	defaultResolver := endpoints.DefaultResolver()
+	defaultResolverFn := func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+		return defaultResolver.EndpointFor(service, region, optFns...)
+	}
+	if _, err := os.Stat(CustomEndpointFile); os.IsNotExist(err) {
+		return defaultResolverFn
+	} else {
+		if f, err := os.Open(CustomEndpointFile); err == nil {
+			var customs CustomEndpoints
+			if e := json.NewDecoder(f).Decode(&customs); e != nil {
+				fmt.Println(e)
+				return defaultResolverFn
+			} else {
+				customResolverFn := func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+					if ep, ok := customs.Customs[service]; ok {
+						return endpoints.ResolvedEndpoint{
+							URL:           ep.Endpoint,
+							SigningRegion: ep.SigningRegion,
+						}, nil
+					}
+					return defaultResolver.EndpointFor(service, region, optFns...)
+				}
+				return customResolverFn
+			}
+		} else {
+			fmt.Println(err)
+			return defaultResolverFn
+		}
+	}
+}
+
 func (p *awsSDKProvider) Compute(regionName string) (EC2, error) {
 	awsConfig := &aws.Config{
 		Region:      &regionName,
 		Credentials: p.creds,
+		EndpointResolver: endpoints.ResolverFunc(loadCustomResolver()),
 	}
 	awsConfig = awsConfig.WithCredentialsChainVerboseErrors(true)
 
@@ -664,6 +709,7 @@ func (p *awsSDKProvider) LoadBalancing(regionName string) (ELB, error) {
 	awsConfig := &aws.Config{
 		Region:      &regionName,
 		Credentials: p.creds,
+		EndpointResolver: endpoints.ResolverFunc(loadCustomResolver()),
 	}
 	awsConfig = awsConfig.WithCredentialsChainVerboseErrors(true)
 
@@ -678,6 +724,7 @@ func (p *awsSDKProvider) LoadBalancingV2(regionName string) (ELBV2, error) {
 	awsConfig := &aws.Config{
 		Region:      &regionName,
 		Credentials: p.creds,
+		EndpointResolver: endpoints.ResolverFunc(loadCustomResolver()),
 	}
 	awsConfig = awsConfig.WithCredentialsChainVerboseErrors(true)
 
@@ -692,6 +739,7 @@ func (p *awsSDKProvider) Autoscaling(regionName string) (ASG, error) {
 	awsConfig := &aws.Config{
 		Region:      &regionName,
 		Credentials: p.creds,
+		EndpointResolver: endpoints.ResolverFunc(loadCustomResolver()),
 	}
 	awsConfig = awsConfig.WithCredentialsChainVerboseErrors(true)
 
@@ -703,7 +751,7 @@ func (p *awsSDKProvider) Autoscaling(regionName string) (ASG, error) {
 }
 
 func (p *awsSDKProvider) Metadata() (EC2Metadata, error) {
-	client := ec2metadata.New(session.New(&aws.Config{}))
+	client := ec2metadata.New(session.New(&aws.Config{EndpointResolver: endpoints.ResolverFunc(loadCustomResolver())}))
 	p.addAPILoggingHandlers(&client.Handlers)
 	return client, nil
 }
@@ -712,6 +760,7 @@ func (p *awsSDKProvider) KeyManagement(regionName string) (KMS, error) {
 	awsConfig := &aws.Config{
 		Region:      &regionName,
 		Credentials: p.creds,
+		EndpointResolver: endpoints.ResolverFunc(loadCustomResolver()),
 	}
 	awsConfig = awsConfig.WithCredentialsChainVerboseErrors(true)
 
@@ -943,7 +992,7 @@ func init() {
 			return nil, fmt.Errorf("unable to read AWS cloud provider config file: %v", err)
 		}
 
-		sess, err := session.NewSession(&aws.Config{})
+		sess, err := session.NewSession(&aws.Config{EndpointResolver: endpoints.ResolverFunc(loadCustomResolver())})
 		if err != nil {
 			return nil, fmt.Errorf("unable to initialize AWS session: %v", err)
 		}
