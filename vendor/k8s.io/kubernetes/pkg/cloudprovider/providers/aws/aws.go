@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"json"
+	"encoding/json"
 	"net"
 	"os"
 	"strconv"
