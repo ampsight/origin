@@ -655,7 +655,7 @@ func (p *awsSDKProvider) getCrossRequestRetryDelay(regionName string) *CrossRequ
 	return delayer
 }
 
-const CustomEndpointFile = "/etc/origin/node/pods/awscustoms.json"
+const CustomEndpointFile = "/etc/origin/cloudprovider/awscustoms.json"
 
 func loadCustomResolver() func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
 	defaultResolver := endpoints.DefaultResolver()
