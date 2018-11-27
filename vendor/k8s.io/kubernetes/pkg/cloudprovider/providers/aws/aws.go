@@ -656,6 +656,7 @@ func (p *awsSDKProvider) getCrossRequestRetryDelay(regionName string) *CrossRequ
 }
 
 const CustomEndpointFile = "/etc/origin/cloudprovider/awscustoms.json"
+const LogIdentity = "Custom Endpoints"
 
 func loadCustomResolver() func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
 	defaultResolver := endpoints.DefaultResolver()
@@ -663,16 +664,19 @@ func loadCustomResolver() func(service, region string, optFns ...func(*endpoints
 		return defaultResolver.EndpointFor(service, region, optFns...)
 	}
 	if _, err := os.Stat(CustomEndpointFile); os.IsNotExist(err) {
+		fmt.Println("AWS provider", LogIdentity, "disabled")
 		return defaultResolverFn
 	} else {
 		if f, err := os.Open(CustomEndpointFile); err == nil {
 			var customs CustomEndpoints
 			if e := json.NewDecoder(f).Decode(&customs); e != nil {
-				fmt.Println(e)
+				fmt.Println(LogIdentity, "Failed", e)
 				return defaultResolverFn
 			} else {
+				fmt.Println(LogIdentity, "active")
 				customResolverFn := func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
 					if ep, ok := customs.Customs[service]; ok {
+						fmt.Println(LogIdentity, "returned for", service, "in region", region)
 						return endpoints.ResolvedEndpoint{
 							URL:           ep.Endpoint,
 							SigningRegion: ep.SigningRegion,
