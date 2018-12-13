@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -573,20 +572,23 @@ type CloudConfig struct {
 		// Useful in deployments to private edge nodes where amazonaws.com does not resolve
 		OverrideEndpoints bool
 
-		// Delimiter to use to separate servicename from its url and signing region
+		// Delimiter to use to separate servicename from its configuration parameters
+		// NOTE: semi-colon ';' truncates the input line in INI files, do not use ';'
 		// Defaults "|"
 		ServicenameDelimiter string
 
-		// Delimiter to use to separate url and signing region for each override
+		// Delimiter to use to separate region of occurrence, url and signing region for each override
+		// NOTE: semi-colon ';' truncates the input line in INI files, do not use ';'
 		// Defaults to ","
 		OverrideSeparator string
 
 		// Delimiter to use to separate overridden services
+		// NOTE: semi-colon ';' truncates the input line in INI files, do not use ';'
 		// Defaults to "&"
 		ServiceDelimiter string
 
 		// These are of format servicename ServicenameDelimiter url OverrideSeparator signing_region ServiceDelimiter nextservice
-		// s3|https://foo.bar,some signing_region & ec2|https://ec2.foo.bar,some signing_region
+		// s3|region1, https://s3.foo.bar, some signing_region & ec2|region1, https://ec2.foo.bar, signing_region
 		ServiceOverrides string
 	}
 }
@@ -683,18 +685,25 @@ func IsOverridesActive() bool {
 	return overridesActive
 }
 
-func SetOverridesDefaults(cfg *CloudConfig) {
+func SetOverridesDefaults(cfg *CloudConfig) error {
 	if cfg.Global.OverrideEndpoints {
 		if cfg.Global.ServiceDelimiter == "" {
 			cfg.Global.ServiceDelimiter = ServicesDelimiterDefault
+		} else if cfg.Global.ServiceDelimiter == ";" {
+			return fmt.Errorf("semi-colon may not be used as a service delimiter, it truncates the input")
 		}
 		if cfg.Global.ServicenameDelimiter == "" {
 			cfg.Global.ServicenameDelimiter = ServicenameDelimiterDefault
+		} else if cfg.Global.ServicenameDelimiter == ";" {
+			return fmt.Errorf("semi-colon may not be used as a service name delimiter, it truncates the input")
 		}
 		if cfg.Global.OverrideSeparator == "" {
 			cfg.Global.OverrideSeparator = OverrideSeparatorDefault
+		} else if cfg.Global.OverrideSeparator == ";" {
+			return fmt.Errorf("semi-colon may not be used as a override separator, it truncates the input")
 		}
 	}
+	return nil
 }
 
 func MakeRegionEndpointSignature(serviceName, region string) string {
@@ -703,7 +712,9 @@ func MakeRegionEndpointSignature(serviceName, region string) string {
 
 func ParseOverrides(cfg *CloudConfig) error {
 	if cfg.Global.OverrideEndpoints {
-		SetOverridesDefaults(cfg)
+		if err := SetOverridesDefaults(cfg); err != nil {
+			return err
+		}
 		overrides = make(map[string]CustomEndpoint)
 		allOverrides := strings.Split(cfg.Global.ServiceOverrides, cfg.Global.ServiceDelimiter)
 		for _, o := range allOverrides {
