@@ -583,7 +583,7 @@ type CloudConfig struct {
 
 		// Delimiter to use to separate overridden services
 		// Defaults to "&"
-		ServiceDelimter string
+		ServiceDelimiter string
 
 		// These are of format servicename ServicenameDelimiter url OverrideSeparator signing_region ServiceDelimiter nextservice
 		// s3|https://foo.bar,some signing_region & ec2|https://ec2.foo.bar,some signing_region
