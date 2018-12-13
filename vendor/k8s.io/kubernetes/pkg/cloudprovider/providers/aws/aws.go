@@ -697,6 +697,10 @@ func SetOverridesDefaults(cfg *CloudConfig) {
 	}
 }
 
+func MakeRegionEndpointSignature(serviceName, region string) string {
+	return fmt.Sprintf("%s__%s", strings.TrimSpace(serviceName), strings.TrimSpace(region))
+}
+
 func ParseOverrides(cfg *CloudConfig) error {
 	if cfg.Global.OverrideEndpoints {
 		SetOverridesDefaults(cfg)
@@ -706,8 +710,13 @@ func ParseOverrides(cfg *CloudConfig) error {
 			if idx := strings.Index(o, cfg.Global.ServicenameDelimiter); idx != -1 {
 				name := strings.TrimSpace(o[:idx])
 				values := o[idx+1:]
-				pair := strings.Split(values, cfg.Global.OverrideSeparator)
-				overrides[name] = CustomEndpoint{Endpoint: strings.TrimSpace(pair[0]), SigningRegion: strings.TrimSpace(pair[1])}
+				tuple := strings.Split(values, cfg.Global.OverrideSeparator)
+				if len(tuple) != 3 {
+					return errors.New(fmt.Sprintf("3 parameters (region, url, signing region) are required for [%s] in %s",
+						name, o))
+				}
+				signature := MakeRegionEndpointSignature(name, tuple[0])
+				overrides[signature] = CustomEndpoint{Endpoint: strings.TrimSpace(tuple[1]), SigningRegion: strings.TrimSpace(tuple[2])}
 			} else {
 				cfg.Global.OverrideEndpoints = false
 				overridesActive = false
@@ -722,7 +731,6 @@ func ParseOverrides(cfg *CloudConfig) error {
 	return nil
 }
 
-
 func loadCustomResolver() func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
 	defaultResolver := endpoints.DefaultResolver()
 	defaultResolverFn := func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
@@ -730,7 +738,8 @@ func loadCustomResolver() func(service, region string, optFns ...func(*endpoints
 	}
 	if IsOverridesActive() {
 		customResolverFn := func(service, region string, optFns ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
-			if ep, ok := overrides[service]; ok {
+			signature := MakeRegionEndpointSignature(service, region)
+			if ep, ok := overrides[signature]; ok {
 				return endpoints.ResolvedEndpoint{
 					URL:           ep.Endpoint,
 					SigningRegion: ep.SigningRegion,
