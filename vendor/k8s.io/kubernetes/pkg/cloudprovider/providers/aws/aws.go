@@ -1063,6 +1063,7 @@ func (s *awsSdkEC2) DescribeVpcs(request *ec2.DescribeVpcsInput) (*ec2.DescribeV
 
 func init() {
 	registerMetrics()
+	glog.Info("AWS CloudProvider with Endpoint patch")
 	cloudprovider.RegisterCloudProvider(ProviderName, func(config io.Reader) (cloudprovider.Interface, error) {
 		cfg, err := readAWSCloudConfig(config)
 		if err != nil {
